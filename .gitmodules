@@ -1,0 +1,6 @@
+[submodule "extern/distingnt-api"]
+	path = extern/distingnt-api
+	url = https://github.com/expertsleepersltd/distingNT_API
+[submodule "extern/cmsis-dsp"]
+	path = extern/cmsis-dsp
+	url = https://github.com/ARM-software/CMSIS-DSP
