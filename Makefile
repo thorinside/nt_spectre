@@ -42,6 +42,7 @@ PLUGIN_OBJ  := $(BUILD_DIR)/$(notdir $(PLUGIN_SRC:.cpp=.o))
 CMSIS_FFT_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(CMSIS_FFT_SRC))
 OBJS           := $(PLUGIN_OBJ) $(CMSIS_FFT_OBJS)
 
+TARGET_OBJ  := $(BUILD_DIR)/spectralEnvFollower_plugin.o
 TARGET_ELF  := $(BUILD_DIR)/spectralEnvFollower.elf
 TARGET_BIN  := $(BUILD_DIR)/spectralEnvFollower.bin
 
@@ -58,10 +59,14 @@ CFLAGS   += -I$(API_DIR) -I$(CMSIS_INC) -I. -std=c99 -Os -ffast-math \
             -DARM_MATH_CM7 -DARM_MATH_MATRIX_CHECK -DARM_MATH_ROUNDING \
             -fno-math-errno
 
-LDFLAGS  += -shared -nostartfiles -Wl,--gc-sections $(ARCH_FLAGS)
+LDFLAGS  += -static -Wl,--gc-sections $(ARCH_FLAGS)
 
 ############################  Rules  ##########################################
-all: $(TARGET_BIN) | size
+all: $(TARGET_OBJ) | size
+
+# Create final plugin object (relocatable)
+$(TARGET_OBJ): $(OBJS)
+	$(LD) -r -o $@ $^
 
 # Compile C++
 $(BUILD_DIR)/%.o: %.cpp
@@ -81,7 +86,7 @@ $(TARGET_ELF): $(OBJS)
 $(TARGET_BIN): $(TARGET_ELF)
 	$(OBJCOPY) -O binary $< $@
 
-size: $(TARGET_ELF)
+size: $(TARGET_OBJ)
 	$(SIZE) $<
 
 clean:
@@ -91,9 +96,9 @@ flash: $(TARGET_BIN)
 	@echo "⚠️  Implement your own flashing routine here"
 
 # Check for undefined symbols in the plugin
-check: $(TARGET_ELF)
+check: $(TARGET_OBJ)
 	@echo "Checking for undefined symbols..."
-	@$(CROSS_COMPILE)nm -u $(TARGET_ELF) | grep -v "^[[:space:]]*$$" > /tmp/undefined_symbols.txt || true
+	@$(CROSS_COMPILE)nm -u $(TARGET_OBJ) | grep -v "^[[:space:]]*$$" > /tmp/undefined_symbols.txt || true
 	@if [ -s /tmp/undefined_symbols.txt ]; then \
 		echo "⚠️  WARNING: Found undefined symbols:"; \
 		cat /tmp/undefined_symbols.txt; \

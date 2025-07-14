@@ -422,7 +422,7 @@ static void setupUi(_NT_algorithm *, _NT_float3 &) {}
 // -----------------------------------------------------------------------------
 static const _NT_factory gFactory =
 {
-    .guid                       = NT_MULTICHAR('S','p','e','3'),
+    .guid                       = NT_MULTICHAR('T','h','S','f'),
     .name                       = "SpecEnv 3‑Band",
     .description                = "Spectral envelope follower with three CV bands and live FFT display",
     .numSpecifications          = 0,
