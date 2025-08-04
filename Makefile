@@ -1,6 +1,6 @@
 ###############################################################################
 #  Disting NT plug-in — Spectral Envelope Follower (3-band, CV out)
-#  Build file – static link to CMSIS-DSP FFT for Cortex-M / Cortex-A cores
+#  Build file – uses simple table-free FFT implementation
 ###############################################################################
 
 ############################  Toolchain  ######################################
@@ -26,37 +26,21 @@ TOP            := $(CURDIR)
 SRC_DIR        := src
 BUILD_DIR      := build
 API_DIR        := extern/distingnt-api/include
-CMSIS_DIR      := extern/cmsis-dsp
-CMSIS_INC      := $(CMSIS_DIR)/Include
-# Essential CMSIS-DSP FFT source files
-CMSIS_FFT_SRC  := $(CMSIS_DIR)/Source/TransformFunctions/arm_cfft_f32.c \
-                  $(CMSIS_DIR)/Source/TransformFunctions/arm_cfft_radix8_f32.c \
-                  $(CMSIS_DIR)/Source/TransformFunctions/arm_bitreversal2.c \
-                  $(CMSIS_DIR)/Source/TransformFunctions/arm_cfft_init_f32.c \
-                  $(CMSIS_DIR)/Source/CommonTables/arm_common_tables.c \
-                  $(CMSIS_DIR)/Source/CommonTables/arm_const_structs.c
 
 ############################  Files  ##########################################
 PLUGIN_SRC  := spectralEnvFollower.cpp
 PLUGIN_OBJ  := $(BUILD_DIR)/$(notdir $(PLUGIN_SRC:.cpp=.o))
-CMSIS_FFT_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(CMSIS_FFT_SRC))
-OBJS           := $(PLUGIN_OBJ) $(CMSIS_FFT_OBJS)
+OBJS        := $(PLUGIN_OBJ)
 
 TARGET_OBJ  := $(BUILD_DIR)/spectralEnvFollower_plugin.o
 TARGET_ELF  := $(BUILD_DIR)/spectralEnvFollower.elf
 TARGET_BIN  := $(BUILD_DIR)/spectralEnvFollower.bin
 
 ############################  Flags  ##########################################
-CPPFLAGS += -I$(API_DIR) -I$(CMSIS_INC) -I. -std=c++17 -Os -ffast-math \
+INCLUDE_PATH := -I$(API_DIR) -I.
+CPPFLAGS += $(INCLUDE_PATH) -std=c++17 -Os -ffast-math \
             -fdata-sections -ffunction-sections -fno-exceptions -fno-rtti \
             -Wall -Wextra -Werror $(ARCH_FLAGS) \
-            -DARM_MATH_CM7 -DARM_MATH_MATRIX_CHECK -DARM_MATH_ROUNDING \
-            -fno-math-errno
-
-CFLAGS   += -I$(API_DIR) -I$(CMSIS_INC) -I. -std=c99 -Os -ffast-math \
-            -fdata-sections -ffunction-sections \
-            -Wall -Wextra -Werror $(ARCH_FLAGS) \
-            -DARM_MATH_CM7 -DARM_MATH_MATRIX_CHECK -DARM_MATH_ROUNDING \
             -fno-math-errno
 
 LDFLAGS  += -static -Wl,--gc-sections $(ARCH_FLAGS)
@@ -110,3 +94,61 @@ check: $(TARGET_OBJ)
 
 .PHONY: all clean flash size check
 
+# === VCV Emulator Test Builds (added by makefile_augmenter.py) ===
+# Build plugins as host platform dynamic libraries for VCV Rack emulator testing
+# Host compiler settings
+HOST_CXX ?= clang++
+HOST_CXXFLAGS := -std=c++11 -fPIC -Wall  $(INCLUDE_PATH)
+
+# Detect host platform
+HOST_OS := $(shell uname -s)
+
+ifeq ($(HOST_OS),Darwin)
+    HOST_SUFFIX := .dylib
+    HOST_LDFLAGS := -dynamiclib -undefined dynamic_lookup
+else ifeq ($(HOST_OS),Linux)
+    HOST_SUFFIX := .so
+    HOST_LDFLAGS := -shared
+else
+    # Windows/MinGW
+    HOST_SUFFIX := .dll
+    HOST_LDFLAGS := -shared
+endif
+
+# Source files
+host_inputs := $(wildcard *.cpp)
+# Transform source files to host plugins
+host_plugins := $(patsubst %.cpp,%$(HOST_SUFFIX),$(basename host_inputs))
+
+# Build rule for host plugins
+%$(HOST_SUFFIX): %.cpp
+	@echo "Building host plugin: $@"
+	$(HOST_CXX) $(HOST_CXXFLAGS) $(HOST_LDFLAGS) -o $@ $<
+
+# Convenience targets
+.PHONY: host-plugins clean-host install-host
+
+host-plugins: $(host_plugins)
+	@echo "Built $(words $(host_plugins)) host plugin(s)"
+
+clean-host:
+	rm -f *.dylib *.so *.dll
+
+# Install to a test directory (customize INSTALL_DIR as needed)
+INSTALL_DIR ?= ../test_plugins
+install-host: host-plugins
+	@mkdir -p $(INSTALL_DIR)
+	cp $(host_plugins) $(INSTALL_DIR)/
+	@echo "Installed to $(INSTALL_DIR)"
+
+# Help for host builds
+help-host:
+	@echo "Host build targets for VCV Rack emulator testing:"
+	@echo "  make host-plugins    - Build all plugins for host platform"
+	@echo "  make clean-host      - Remove host plugin builds"
+	@echo "  make install-host    - Copy plugins to test directory"
+	@echo ""
+	@echo "Individual plugin targets:"
+	@echo "  make <plugin>$(HOST_SUFFIX)"
+
+# === End VCV Emulator Test Builds ===

@@ -22,10 +22,9 @@
 #include <string.h>
 #include <new>
 #include <distingnt/api.h>
-#include <arm_math.h>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
+#ifndef M_PI_F
+#define M_PI_F 3.14159265358979323846f
 #endif
 
 // Simple errno stub to eliminate undefined symbol dependency
@@ -38,41 +37,114 @@ extern "C" int* __errno(void) {
 // CONFIGURATION CONSTANTS
 // -----------------------------------------------------------------------------
 
-static const int kMaxFftSize             = 2048;          // Largest FFT we ever allocate
-static const int kFftSizes[]             = {256, 512, 1024, 2048};
-static const int kNumFftSizes            = sizeof(kFftSizes)/sizeof(kFftSizes[0]);
+static const int kFftSize                = 1024;          // Fixed 1024-point FFT
+// Smoothing presets for envelope following (0=fast, 3=smooth)
+static const float kSmoothingFactors[]   = {0.1f, 0.3f, 0.6f, 0.85f};
+static const int kNumSmoothingLevels     = sizeof(kSmoothingFactors)/sizeof(kSmoothingFactors[0]);
 static const float kReferenceVoltage     = 10.0f;         // 10 V full‑scale
-static const float kEnvelopeDecayCoeff   = 0.96f;         // Simple exponential decay for envelope smoothing
 static const float kMinPotFreq           = 20.0f;         // 20 Hz lower limit
 static const float kMaxPotFreq           = 20000.0f;      // 20 kHz upper limit
 
 // No need for separate function pointers - we'll use the generic arm_cfft_init_f32()
 
 // -----------------------------------------------------------------------------
+// Simple table-free FFT implementation (radix-2, in-place)
+// -----------------------------------------------------------------------------
+
+// Complex number structure
+struct Complex {
+    float real, imag;
+    Complex(float r = 0, float i = 0) : real(r), imag(i) {}
+    Complex operator+(const Complex& other) const { return Complex(real + other.real, imag + other.imag); }
+    Complex operator-(const Complex& other) const { return Complex(real - other.real, imag - other.imag); }
+    Complex operator*(const Complex& other) const { 
+        return Complex(real * other.real - imag * other.imag, real * other.imag + imag * other.real); 
+    }
+};
+
+// Bit-reverse function for FFT reordering
+static void bitReverse(Complex* data, int n) {
+    // Validate inputs
+    if (!data || n <= 0 || n > kFftSize) return;
+    
+    int j = 0;
+    for (int i = 1; i < n; i++) {
+        int bit = n >> 1;
+        while (j & bit) {
+            j ^= bit;
+            bit >>= 1;
+        }
+        j ^= bit;
+        if (i < j) {
+            Complex temp = data[i];
+            data[i] = data[j];
+            data[j] = temp;
+        }
+    }
+}
+
+// Simple in-place radix-2 FFT with on-the-fly twiddle computation
+static void simpleFFT(Complex* data, int n) {
+    // Validate inputs
+    if (!data || n <= 0 || n > kFftSize) return;
+    
+    bitReverse(data, n);
+    
+    for (int len = 2; len <= n; len <<= 1) {
+        float angle = -2.0f * M_PI_F / len;
+        Complex wlen(cosf(angle), sinf(angle));
+        
+        for (int i = 0; i < n; i += len) {
+            Complex w(1, 0);
+            for (int j = 0; j < len / 2; j++) {
+                Complex u = data[i + j];
+                Complex v = data[i + j + len / 2] * w;
+                data[i + j] = u + v;
+                data[i + j + len / 2] = u - v;
+                w = w * wlen;
+            }
+        }
+    }
+}
+
+// Real-to-complex FFT wrapper (input: real samples, output: complex spectrum)
+static void realFFT(float* realInput, Complex* complexOutput, int n) {
+    // Validate inputs
+    if (!realInput || !complexOutput || n <= 0 || n > kFftSize) return;
+    
+    // Copy real input to complex array (imaginary parts = 0)
+    for (int i = 0; i < n; i++) {
+        complexOutput[i] = Complex(realInput[i], 0);
+    }
+    
+    // Perform complex FFT
+    simpleFFT(complexOutput, n);
+}
+
+// -----------------------------------------------------------------------------
 // DTC (D‑TCM) – real‑time / large data that benefits from fast access.
 // -----------------------------------------------------------------------------
 struct _SpectralEnvFollower_DTC
 {
-    // FFT buffers (size == currentFftSize)
-    float timeBuffer[kMaxFftSize]   __attribute__((aligned(4)));
-    float workBuffer[kMaxFftSize]   __attribute__((aligned(4))); // complex out
+    // Input buffer for real samples
+    float inputBuffer[kFftSize]     __attribute__((aligned(4)));
+    
+    // FFT output buffer (complex spectrum)
+    Complex fftOutput[kFftSize]     __attribute__((aligned(4)));
 
     // Per‑bin magnitude (half‑spectrum)
-    float magnitude[kMaxFftSize/2]  __attribute__((aligned(4)));
-
-    // FFT instances (one for each supported size, initialized on demand)
-    arm_cfft_instance_f32 fft_instances[kNumFftSizes] __attribute__((aligned(4)));
-    bool fft_initialized[kNumFftSizes]; // track which ones are initialized
+    float magnitude[kFftSize/2]     __attribute__((aligned(4)));
 
     // Envelope followers for the three bands
     float env[3];
 
     // UI & control state
-    int   currentFftSizeIdx;   // index into kFftSizes
-    int   samplesAccumulated;  // how many samples currently in timeBuffer
+    int   currentSmoothingIdx; // index into kSmoothingFactors (0-3)
+    int   samplesAccumulated;  // how many samples currently in inputBuffer
     float potCentres[3];       // Hz – centre freq for each band (updated by UI)
     float potCentreBins[3];    // cached centre‑bin indices (float) for speed
     float yScale;              // vertical scale in UI (multiplier)
+    bool  displayInitialized;  // flag to track per-instance display initialization
 };
 
 // -----------------------------------------------------------------------------
@@ -94,6 +166,7 @@ enum
     kParamCvOut1, kParamCvOut1Mode,
     kParamCvOut2, kParamCvOut2Mode,
     kParamCvOut3, kParamCvOut3Mode,
+    kParamBandAFreq, kParamBandBFreq, kParamBandCFreq,
 };
 
 static _NT_parameter gParameters[] = {
@@ -101,9 +174,12 @@ static _NT_parameter gParameters[] = {
     NT_PARAMETER_CV_OUTPUT_WITH_MODE("Band A CV", 1, 13)
     NT_PARAMETER_CV_OUTPUT_WITH_MODE("Band B CV", 1, 14)
     NT_PARAMETER_CV_OUTPUT_WITH_MODE("Band C CV", 1, 15)
+    { .name = "Band A Freq", .min = 20, .max = 20000, .def = 100, .unit = kNT_unitHz, .scaling = kNT_scalingNone, .enumStrings = nullptr },
+    { .name = "Band B Freq", .min = 20, .max = 20000, .def = 1000, .unit = kNT_unitHz, .scaling = kNT_scalingNone, .enumStrings = nullptr },
+    { .name = "Band C Freq", .min = 20, .max = 20000, .def = 8000, .unit = kNT_unitHz, .scaling = kNT_scalingNone, .enumStrings = nullptr },
 };
 
-// Single routing page – pots/encoders handled in custom UI.
+// Parameter pages
 static const uint8_t routingPage[] = {
     kParamInput,
     kParamCvOut1, kParamCvOut1Mode,
@@ -111,8 +187,13 @@ static const uint8_t routingPage[] = {
     kParamCvOut3, kParamCvOut3Mode,
 };
 
+static const uint8_t spectralPage[] = {
+    kParamBandAFreq, kParamBandBFreq, kParamBandCFreq,
+};
+
 static const _NT_parameterPage gPages[] = {
-    {.name = "Routing", .numParams = (uint8_t)ARRAY_SIZE(routingPage), .params = routingPage},
+    {.name = "Routing", .numParams = static_cast<uint8_t>(ARRAY_SIZE(routingPage)), .params = routingPage},
+    {.name = "Spectral", .numParams = static_cast<uint8_t>(ARRAY_SIZE(spectralPage)), .params = spectralPage},
 };
 
 static const _NT_parameterPages gParameterPages = {
@@ -130,6 +211,14 @@ static inline float potToFreq(float norm)
     const float maxLog = logf(kMaxPotFreq);
     float f = expf(minLog + norm * (maxLog - minLog));
     return f;
+}
+
+// Helper – map frequency → 0‑1 pot value (inverse of potToFreq)
+static inline float freqToPot(float freq)
+{
+    const float minLog = logf(kMinPotFreq);
+    const float maxLog = logf(kMaxPotFreq);
+    return (logf(freq) - minLog) / (maxLog - minLog);
 }
 
 // -----------------------------------------------------------------------------
@@ -152,15 +241,30 @@ static _NT_algorithm *construct(const _NT_algorithmMemoryPtrs &mem,
                                 const int32_t *)
 {
     auto *dtc = new (mem.dtc) _SpectralEnvFollower_DTC();
-    memset(dtc, 0, sizeof(*dtc));
-
-    dtc->currentFftSizeIdx = 1;   // default 512‑pt FFT
-    dtc->yScale            = 1.0f;
-
-    // Initialize FFT tracking (instances will be initialized on first use)
-    for (int i = 0; i < kNumFftSizes; ++i) {
-        dtc->fft_initialized[i] = false;
+    
+    // Initialize arrays manually since memset can't be used with non-trivial types
+    for (int i = 0; i < kFftSize; i++) {
+        dtc->inputBuffer[i] = 0.0f;
+        dtc->fftOutput[i] = Complex(0, 0);
     }
+    for (int i = 0; i < kFftSize/2; i++) {
+        dtc->magnitude[i] = 0.0f;
+    }
+    for (int i = 0; i < 3; i++) {
+        dtc->env[i] = 0.0f;
+    }
+    
+    // Initialize frequency values to zero - will be set by parameterChanged() calls
+    for (int i = 0; i < 3; i++) {
+        dtc->potCentres[i] = 0.0f;
+        dtc->potCentreBins[i] = 0.0f;
+    }
+    dtc->currentSmoothingIdx = 0;
+    dtc->samplesAccumulated = 0;
+
+    dtc->currentSmoothingIdx = 1;    // default to moderate smoothing
+    dtc->yScale              = 1.0f;
+    dtc->displayInitialized  = false; // initialize per-instance display flag
 
     auto *alg = new (mem.sram) _SpectralEnvFollower(dtc);
     alg->parameters      = gParameters;
@@ -183,100 +287,124 @@ static inline float envToVolts(float env)
 }
 
 // -----------------------------------------------------------------------------
-// parameterChanged – none required presently (pots/encoders handled in UI).
+// parameterChanged – handle frequency parameter changes.
 // -----------------------------------------------------------------------------
-static void parameterChanged(_NT_algorithm *, int) {}
+static void parameterChanged(_NT_algorithm *base, int paramIndex) 
+{
+    auto *self = (_SpectralEnvFollower *)base;
+    auto *d = self->dtc;
+    
+    // Use actual sample rate if available, otherwise assume 48kHz
+    float sampleRate = (NT_globals.sampleRate > 0) ? (float)NT_globals.sampleRate : 48000.0f;
+    float binHz = sampleRate / (float)kFftSize;
+    
+    // Handle frequency parameter changes
+    if (paramIndex == kParamBandAFreq) {
+        d->potCentres[0] = (float)self->v[kParamBandAFreq];
+        d->potCentreBins[0] = d->potCentres[0] / binHz;
+    }
+    else if (paramIndex == kParamBandBFreq) {
+        d->potCentres[1] = (float)self->v[kParamBandBFreq];
+        d->potCentreBins[1] = d->potCentres[1] / binHz;
+    }
+    else if (paramIndex == kParamBandCFreq) {
+        d->potCentres[2] = (float)self->v[kParamBandCFreq];
+        d->potCentreBins[2] = d->potCentres[2] / binHz;
+    }
+}
 
 // -----------------------------------------------------------------------------
 // step – DSP core.
 // -----------------------------------------------------------------------------
 static void step(_NT_algorithm *base, float *bus, int framesBy4)
 {
+    if (!base || !bus || framesBy4 <= 0) return;
+    
     auto *self = (_SpectralEnvFollower *)base;
-    auto *d    = self->dtc;
-    const int  Ntotal = framesBy4 * 4;
-
-    // Resolve pointers.
-    const int  inputBusIdx   = self->v[kParamInput] - 1;
-    float     *inBuf         = bus + inputBusIdx * Ntotal;
-
-    // Output busses (replace or add handled later).
-    const int  outIdx[3]     = { self->v[kParamCvOut1] - 1,
-                                 self->v[kParamCvOut2] - 1,
-                                 self->v[kParamCvOut3] - 1 };
-    const bool outModeAdd[3] = { (bool)self->v[kParamCvOut1Mode],
-                                 (bool)self->v[kParamCvOut2Mode],
-                                 (bool)self->v[kParamCvOut3Mode] };
-
-    const int  fftSize       = kFftSizes[d->currentFftSizeIdx];
+    if (!self || !self->dtc || !self->v) return;
+    
+    auto *d = self->dtc;
+    
+    const int numFrames = framesBy4 * 4;
+    
+    // Validate input parameter
+    int inputBus = self->v[kParamInput];
+    if (inputBus < 1 || inputBus > 28) return;
+    const float *inBuf = bus + (inputBus - 1) * numFrames;
+    
+    // Get output bus pointers
+    float *outBuf[3] = {nullptr, nullptr, nullptr};
+    bool outModeAdd[3] = {false, false, false};
+    
+    for (int b = 0; b < 3; b++) {
+        int paramIdx = kParamCvOut1 + b * 2;
+        int modeIdx = paramIdx + 1;
+        
+        int outputBus = self->v[paramIdx];
+        if (outputBus >= 1 && outputBus <= 28) {
+            outBuf[b] = bus + (outputBus - 1) * numFrames;
+            outModeAdd[b] = (bool)self->v[modeIdx];
+        }
+    }
 
     // -----------------------------------------------------------------
     // Accumulate samples until we have fftSize, then run analysis.
     // -----------------------------------------------------------------
     int idx = d->samplesAccumulated;
-    for (int n=0; n<Ntotal; ++n)
+    if (idx < 0 || idx >= kFftSize) {
+        idx = 0;
+        d->samplesAccumulated = 0;
+    }
+    
+    for (int n = 0; n < numFrames; ++n)
     {
-        if (idx < fftSize)
+        if (idx < kFftSize)
         {
-            d->timeBuffer[idx++] = inBuf[n];
+            d->inputBuffer[idx++] = inBuf[n];
         }
-        if (idx == fftSize)
+        if (idx == kFftSize)
         {
-            // Windowing (Hann) + FFT.
-            for (int i=0;i<fftSize;++i)
+            // Apply Hann window to input
+            for (int i = 0; i < kFftSize; ++i)
             {
-                float w = 0.5f * (1.0f - cosf((2.0f * M_PI * i) / (fftSize-1)));
-                d->workBuffer[i] = d->timeBuffer[i] * w;
-            }
-            // Copy windowed data to complex format (real parts only, imaginary = 0)
-            for (int i = 0; i < fftSize; i++) {
-                d->timeBuffer[2*i] = d->workBuffer[i];     // Real part
-                d->timeBuffer[2*i + 1] = 0.0f;             // Imaginary part = 0
+                float w = 0.5f * (1.0f - cosf((2.0f * M_PI_F * i) / (kFftSize - 1)));
+                d->inputBuffer[i] *= w;
             }
             
-            // Initialize FFT instance if needed
-            if (!d->fft_initialized[d->currentFftSizeIdx]) {
-                arm_status status = arm_cfft_init_f32(&d->fft_instances[d->currentFftSizeIdx], 
-                                                     (uint16_t)fftSize);
-                if (status == ARM_MATH_SUCCESS) {
-                    d->fft_initialized[d->currentFftSizeIdx] = true;
-                }
-            }
-            
-            // Perform FFT using CMSIS-DSP (only if initialization succeeded)
-            if (d->fft_initialized[d->currentFftSizeIdx]) {
-                const arm_cfft_instance_f32 *fft_inst = &d->fft_instances[d->currentFftSizeIdx];
-                arm_cfft_f32(fft_inst, d->timeBuffer, 0, 1); // Forward FFT, bit-reverse
-            }
+            // Perform table-free FFT (real input -> complex output)
+            realFFT(d->inputBuffer, d->fftOutput, kFftSize);
 
-            // Magnitudes (only first half – real spectrum).
-            const int half = fftSize / 2;
-            for (int k=0;k<half;++k)
+            // Calculate magnitudes from complex FFT output
+            const int half = kFftSize / 2;
+            for (int k = 0; k < half; ++k)
             {
-                float re = d->timeBuffer[2*k];     // FFT output is in timeBuffer
-                float im = d->timeBuffer[2*k + 1];
-                d->magnitude[k] = sqrtf(re*re + im*im);
+                float re = d->fftOutput[k].real;
+                float im = d->fftOutput[k].imag;
+                d->magnitude[k] = sqrtf(re * re + im * im);
             }
 
             // Update envelopes for each band.
             for (int b=0;b<3;++b)
             {
-                // Convert centre freq (Hz) → bin.
+                // Convert centre freq (Hz) → bin
                 float centreBin = d->potCentreBins[b];
-                // Integrate ±3 bins.
                 int c = (int)roundf(centreBin);
-                int lo = c - 3; if (lo < 0) lo = 0;
-                int hi = c + 3; if (hi >= half) hi = half-1;
+                int lo = c - 10; if (lo < 0) lo = 0;
+                int hi = c + 10; if (hi >= half) hi = half-1;
 
                 float sum = 0.0f;
-                for (int k=lo;k<=hi;++k) sum += d->magnitude[k];
-                float env = sum / (float)(hi-lo+1); // mean magnitude
+                for (int k = lo; k <= hi; ++k) {
+                    sum += d->magnitude[k];
+                }
+                float env = sum / (float)(hi - lo + 1);
 
-                // Simple exponential smoothing – attack instant, decay slow.
+                // Apply smoothing
+                const float smoothing = kSmoothingFactors[d->currentSmoothingIdx];
+                
                 if (env > d->env[b])
-                    d->env[b] = env;
+                    d->env[b] = env; // Fast attack
                 else
-                    d->env[b] = d->env[b] * kEnvelopeDecayCoeff + env * (1.0f - kEnvelopeDecayCoeff);
+                    d->env[b] = d->env[b] * smoothing + env * (1.0f - smoothing); // Configurable decay
             }
 
             // Reset accumulator.
@@ -288,18 +416,20 @@ static void step(_NT_algorithm *base, float *bus, int framesBy4)
     // -----------------------------------------------------------------
     // Write CV outputs for this block – hold last envelope value.
     // -----------------------------------------------------------------
-    for (int b=0;b<3;++b)
+    for (int b = 0; b < 3; ++b)
     {
-        if (outIdx[b] < 0) continue; // not connected
-        float *out = bus + outIdx[b] * Ntotal;
-        float v    = envToVolts(d->env[b]);
-        if (outModeAdd[b])
-        {
-            for (int n=0;n<Ntotal;++n) out[n] += v;
-        }
-        else
-        {
-            for (int n=0;n<Ntotal;++n) out[n]  = v;
+        if (outBuf[b] != nullptr) {
+            float v = envToVolts(d->env[b]);
+            
+            if (outModeAdd[b]) {
+                for (int n = 0; n < numFrames; ++n) {
+                    outBuf[b][n] += v;
+                }
+            } else {
+                for (int n = 0; n < numFrames; ++n) {
+                    outBuf[b][n] = v;
+                }
+            }
         }
     }
 }
@@ -310,60 +440,102 @@ static void step(_NT_algorithm *base, float *bus, int framesBy4)
 static bool draw(_NT_algorithm *base)
 {
     auto *self = (_SpectralEnvFollower *)base;
-    auto *d    = self->dtc;
+    
+    // Very basic safety check - test if we can even access the structure
+    if (!self) {
+        return false;
+    }
+    
+    auto *d = self->dtc;
+    if (!d) {
+        return false;
+    }
+    
+    // Initialize bin positions on first draw (per-instance)
+    if (!d->displayInitialized) {
+        // Use actual sample rate if available, otherwise assume 48kHz
+        float sampleRate = (NT_globals.sampleRate > 0) ? (float)NT_globals.sampleRate : 48000.0f;
+        float binHz = sampleRate / (float)kFftSize;
+        
+        // Recalculate bin positions from current frequency values (set by parameterChanged)
+        for (int i = 0; i < 3; i++) {
+            if (d->potCentres[i] > 0.0f) {
+                d->potCentreBins[i] = d->potCentres[i] / binHz;
+                // Ensure bin positions are valid and clipped to reasonable bounds
+                if (d->potCentreBins[i] < 0.0f) d->potCentreBins[i] = 0.0f;
+                if (d->potCentreBins[i] >= (float)(kFftSize/2)) d->potCentreBins[i] = (float)(kFftSize/2 - 1);
+            }
+        }
+        d->displayInitialized = true;
+    }
 
-    const int width  = 128; // OLED controller width
+    // Draw spectrum visualization
+    const int width = 256;
     const int height = 64;
-
-    // Clear screen.
-    memset(NT_screen, 0, sizeof(NT_screen));
-
-    // Draw spectrum (every 2 px → 64 bars).
-    const int fftSize    = kFftSizes[d->currentFftSizeIdx];
-    const int half       = fftSize / 2;
-    const int bars       = width / 2;
-    const int binsPerBar = half / bars;
-
-    for (int bar=0; bar<bars; ++bar)
-    {
-        // Average magnitude for this bar.
-        float mag = 0.0f;
-        int   startBin = bar * binsPerBar;
-        int   endBin   = startBin + binsPerBar - 1;
-        if (endBin >= half) endBin = half-1;
-        for (int k=startBin; k<=endBin; ++k) mag += d->magnitude[k];
-        mag /= (float)(endBin-startBin+1);
-
-        // Scale and clamp to screen height.
-        int barHeight = (int)(mag * d->yScale * 0.004f * height); // empirical scaling
+    const int half = kFftSize / 2;  // 512 bins
+    
+    // Display first 256 bins (covers most useful frequency range)
+    for (int x = 0; x < width && x < half; ++x) {
+        // Get magnitude for this bin
+        float mag = d->magnitude[x];
+        
+        // Apply logarithmic scaling for better visualization
+        float logMag = (mag > 0.001f) ? logf(mag + 1.0f) : 0.0f;
+        
+        // Scale to screen height - increase sensitivity to see weaker signals
+        int barHeight = (int)(logMag * d->yScale * 20.0f);  // Increased from 8.0f to 20.0f
+        if (barHeight < 0) barHeight = 0;
         if (barHeight > height) barHeight = height;
 
-        // Draw vertical bar (filled).
-        int x = bar * 2;
-        for (int y=0; y<barHeight; ++y)
-        {
-            NT_screen[(height-1-y)*128 + x] = 0xFF;
-            NT_screen[(height-1-y)*128 + x+1] = 0xFF;
+        // Draw spectrum bar with coordinate validation
+        if (barHeight > 0 && x >= 0 && x < width) {
+            int y1 = height - barHeight;
+            int y2 = height - 1;
+            // Ensure y coordinates are reasonable (clipping will handle edge cases)
+            if (y1 < 0) y1 = 0;
+            if (y2 >= height) y2 = height - 1;
+            if (y1 <= y2) {  // Only draw if we have a valid line
+                NT_drawShapeI(kNT_line, x, y1, x, y2, 7);  // Use color 7 for spectrum
+            }
         }
     }
 
-    // Draw centre lines for each band.
-    for (int b=0;b<3;++b)
-    {
-        float bin = d->potCentreBins[b];
-        int   bar = (int)(bin / binsPerBar);
-        if (bar < 0) bar = 0;
-        if (bar >= bars) bar = bars-1;
-        int x = bar * 2;
-        // Vertical marker.
-        for (int y=0; y<height; ++y)
-            NT_screen[y*128 + x] = (b==0?0xA0:(b==1?0x60:0x40));
-        // Big digit at bottom.
-        char txt[2] = {(char)('A'+b), 0};
-        NT_drawText(x, height-10, txt, kNT_textLarge, kNT_textCentre);
+    // Draw band center markers based on current parameter values
+    float sampleRate = (NT_globals.sampleRate > 0) ? (float)NT_globals.sampleRate : 48000.0f;
+    float binHz = sampleRate / (float)kFftSize;
+    
+    for (int b = 0; b < 3; ++b) {
+        // Get frequency directly from parameter values
+        int paramIndex = kParamBandAFreq + b;
+        float frequency = (float)self->v[paramIndex];
+        
+        // Only draw marker if we have a valid frequency (> 0)
+        if (frequency > 0.0f) {
+            float centerBin = frequency / binHz;
+            
+            // Ensure centerBin is within display range
+            if (centerBin >= 1.0f && centerBin < (float)(width - 1)) {
+                int centerX = (int)roundf(centerBin);
+                
+                // Ensure centerX is within reasonable bounds
+                if (centerX >= 0 && centerX < width) {
+                    // Use distinct colors: 15 (white), 11, 3
+                    int color = (b == 0) ? 15 : ((b == 1) ? 11 : 3);
+                    
+                    // Draw vertical line for frequency marker
+                    NT_drawShapeI(kNT_line, centerX, 0, centerX, height - 1, color);
+                    
+                    // Draw horizontal line at top for visibility
+                    if (centerX >= 2 && centerX <= width - 3) {
+                        NT_drawShapeI(kNT_line, centerX - 2, 0, centerX + 2, 0, color);
+                        NT_drawShapeI(kNT_line, centerX - 2, 1, centerX + 2, 1, color);
+                    }
+                }
+            }
+        }
     }
 
-    return true; // suppress default header line
+    return true;  // Suppress header to use full screen
 }
 
 // -----------------------------------------------------------------------------
@@ -379,15 +551,29 @@ static void customUi(_NT_algorithm *base, const _NT_uiData &ui)
     auto *self = (_SpectralEnvFollower *)base;
     auto *d    = self->dtc;
 
-    // Update band centres from pots.
-    float pots[3] = { ui.pots[0], ui.pots[1], ui.pots[2] };
-    for (int b=0;b<3;++b)
+    // Handle pot changes by updating parameters through proper API
+    // Handle left pot (Band A)
+    if (ui.controls & kNT_potL)
     {
-        d->potCentres[b]     = potToFreq(pots[b]);
-        // Cache bin index.
-        int   fftSize = kFftSizes[d->currentFftSizeIdx];
-        float binHz   = (float)NT_globals.sampleRate / (float)fftSize;
-        d->potCentreBins[b] = d->potCentres[b] / binHz;
+        float frequency = potToFreq(ui.pots[0]);
+        int16_t freqValue = (int16_t)roundf(frequency);
+        NT_setParameterFromUi(NT_algorithmIndex(self), kParamBandAFreq + NT_parameterOffset(), freqValue);
+    }
+    
+    // Handle center pot (Band B)
+    if (ui.controls & kNT_potC)
+    {
+        float frequency = potToFreq(ui.pots[1]);
+        int16_t freqValue = (int16_t)roundf(frequency);
+        NT_setParameterFromUi(NT_algorithmIndex(self), kParamBandBFreq + NT_parameterOffset(), freqValue);
+    }
+    
+    // Handle right pot (Band C)
+    if (ui.controls & kNT_potR)
+    {
+        float frequency = potToFreq(ui.pots[2]);
+        int16_t freqValue = (int16_t)roundf(frequency);
+        NT_setParameterFromUi(NT_algorithmIndex(self), kParamBandCFreq + NT_parameterOffset(), freqValue);
     }
 
     // Encoder L – vertical scale (±1 detent).
@@ -398,24 +584,30 @@ static void customUi(_NT_algorithm *base, const _NT_uiData &ui)
         if (d->yScale > 8.0f)   d->yScale = 8.0f;
     }
 
-    // Encoder R – FFT size cycling.
+    // Encoder R – Envelope smoothing adjustment.
     if (ui.encoders[1] != 0)
     {
         int dir = (ui.encoders[1] > 0) ? 1 : -1;
-        d->currentFftSizeIdx = (d->currentFftSizeIdx + dir + kNumFftSizes) % kNumFftSizes;
-        // Reset accumulation so we don't mix sizes.
-        d->samplesAccumulated = 0;
-        // Recompute cached bin positions.
-        for (int b=0;b<3;++b)
-        {
-            float binHz = (float)NT_globals.sampleRate / (float)kFftSizes[d->currentFftSizeIdx];
-            d->potCentreBins[b] = d->potCentres[b] / binHz;
-        }
-        // Note: FFT instance for new size will be initialized on next use
+        d->currentSmoothingIdx = (d->currentSmoothingIdx + dir + kNumSmoothingLevels) % kNumSmoothingLevels;
     }
 }
 
-static void setupUi(_NT_algorithm *, _NT_float3 &) {}
+static void setupUi(_NT_algorithm *base, _NT_float3 &pots) 
+{
+    auto *self = (_SpectralEnvFollower *)base;
+    
+    // Set pot positions to reflect current frequency parameter values
+    // Convert Hz parameter values to normalized 0-1 pot positions
+    pots[0] = freqToPot((float)self->v[kParamBandAFreq]);
+    pots[1] = freqToPot((float)self->v[kParamBandBFreq]);
+    pots[2] = freqToPot((float)self->v[kParamBandCFreq]);
+    
+    // Clamp to valid range [0, 1]
+    for (int b = 0; b < 3; ++b) {
+        if (pots[b] < 0.0f) pots[b] = 0.0f;
+        if (pots[b] > 1.0f) pots[b] = 1.0f;
+    }
+}
 
 // -----------------------------------------------------------------------------
 // Factory descriptor.
