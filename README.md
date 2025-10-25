@@ -16,11 +16,13 @@
 
 ### Key Features
 
-- **Real-time FFT Analysis** with ARM-optimized CMSIS-DSP library
+- **Real-time FFT Analysis** with 512-point FFT running at 60Hz
 - **Three Independent Frequency Bands** with configurable center frequencies
-- **Variable FFT Sizes**: 256, 512, 1024, 2048 points for different time/frequency resolution
-- **Live Spectrum Display** on OLED with band position markers
-- **CV Envelope Outputs** (0-10V) tracking energy in each frequency band
+- **Dual Detection Modes**: RMS (power-based) and Peak detection
+- **Proportional Bandwidth Control**: Variable from 10% to 200% (default: 1/3 octave)
+- **Precise Envelope Following**: Separate attack (1-1000ms) and release (10-5000ms) controls
+- **Live Spectrum Display** on OLED with band position markers and pink noise reference
+- **CV Envelope Outputs** (0-10V) with accurate voltage scaling
 - **Interactive Controls** via pots and encoders
 
 ## Visual Interface
@@ -151,57 +153,15 @@ The frequency mapping follows a **logarithmic scale** for musical perception:
 | Control | Function | Effect |
 |---------|----------|--------|
 | **Encoder L** | Spectrum Y-Scale | Each detent: ×2 or ×½ scaling |
-| **Encoder R** | FFT Size | Cycles: 256 → 512 → 1024 → 2048 |
+| **Encoder R** | Detection Mode | Toggles: RMS ↔ Peak |
 
-### FFT Size Selection
+### Parameter Pages
 
-```svg
-<svg width="600" height="200" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="600" height="200" fill="#f9f9f9" stroke="#ddd" stroke-width="1"/>
-  
-  <!-- Timeline -->
-  <line x1="50" y1="100" x2="550" y2="100" stroke="#333" stroke-width="2"/>
-  
-  <!-- FFT Size Markers -->
-  <g font-family="Arial" font-size="12" text-anchor="middle">
-    <!-- 256 -->
-    <circle cx="100" cy="100" r="8" fill="#ff6b6b"/>
-    <text x="100" y="80" font-weight="bold">256</text>
-    <text x="100" y="130" font-size="10">Fast Response</text>
-    <text x="100" y="145" font-size="10">Low Freq Resolution</text>
-    
-    <!-- 512 -->
-    <circle cx="200" cy="100" r="8" fill="#4ecdc4"/>
-    <text x="200" y="80" font-weight="bold">512</text>
-    <text x="200" y="130" font-size="10">Balanced</text>
-    <text x="200" y="145" font-size="10">(Default)</text>
-    
-    <!-- 1024 -->
-    <circle cx="350" cy="100" r="8" fill="#45b7d1"/>
-    <text x="350" y="80" font-weight="bold">1024</text>
-    <text x="350" y="130" font-size="10">Good Resolution</text>
-    <text x="350" y="145" font-size="10">Moderate Speed</text>
-    
-    <!-- 2048 -->
-    <circle cx="500" cy="100" r="8" fill="#96ceb4"/>
-    <text x="500" y="80" font-weight="bold">2048</text>
-    <text x="500" y="130" font-size="10">High Resolution</text>
-    <text x="500" y="145" font-size="10">Slower Response</text>
-  </g>
-  
-  <!-- Arrows -->
-  <path d="M 120 100 L 180 100 M 175 95 L 180 100 L 175 105" stroke="#666" stroke-width="2" fill="none"/>
-  <path d="M 220 100 L 330 100 M 325 95 L 330 100 L 325 105" stroke="#666" stroke-width="2" fill="none"/>
-  <path d="M 370 100 L 480 100 M 475 95 L 480 100 L 475 105" stroke="#666" stroke-width="2" fill="none"/>
-  
-  <!-- Title -->
-  <text x="300" y="30" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold">FFT Size Trade-offs</text>
-  
-  <!-- Legend -->
-  <text x="50" y="175" font-family="Arial" font-size="12" fill="#666">← Higher Time Resolution | Higher Frequency Resolution →</text>
-</svg>
-```
+The plugin has three parameter pages accessible via the standard Disting NT menu:
+
+1. **Routing Page** - Configure I/O routing
+2. **Spectral Page** - Set band center frequencies
+3. **Envelope Page** - Configure bandwidth, attack/release times, and detection mode
 
 ### CV Output Behavior
 
@@ -209,15 +169,16 @@ Each frequency band generates a **0-10V CV signal** that follows the energy in t
 
 - **0V**: No energy detected in the band
 - **10V**: Maximum energy detected
-- **Response**: Fast attack, slow decay (adjustable envelope characteristics)
-- **Bandwidth**: ±3 frequency bins around center frequency
+- **Response**: Configurable attack/release times (default: 10ms attack, 100ms release)
+- **Bandwidth**: Proportional to center frequency (default: 1/3 octave)
 
 ### Performance Tips
 
-1. **For Percussion**: Use smaller FFT sizes (256-512) for fast transient response
-2. **For Harmonic Content**: Use larger FFT sizes (1024-2048) for precise frequency separation
-3. **For Live Performance**: Start with 512-point FFT as a good compromise
-4. **Band Spacing**: Space frequency bands apart for independent tracking
+1. **For Percussion**: Use Peak detection mode and fast attack times (1-10ms)
+2. **For Sustained Sounds**: Use RMS detection mode with longer attack times (50-200ms)
+3. **Band Spacing**: Space frequency bands at least 1 octave apart for independent tracking
+4. **Bandwidth Control**: Wider bands capture more energy but lose frequency specificity
+5. **Pink Noise Reference**: Use the background overlay to match your mix's spectral balance
 
 ## Patching Examples
 
@@ -576,4 +537,12 @@ This project is released under the MIT License. See the LICENSE file for details
 
 ## Version History
 
-- **v1.0**: Initial release with 3-band spectral analysis and ARM-optimized FFT
+### v1.0.0 (2025-10-25)
+- Initial release
+- 3-band spectral envelope follower with 512-point FFT
+- RMS and Peak detection modes
+- Proportional bandwidth control (10-200%)
+- Attack/Release envelope parameters (1-1000ms, 10-5000ms)
+- Pink noise reference overlay on spectrum display
+- Proper FFT normalization and voltage scaling for accurate CV output
+- Fixed envelope timing to use FFT update rate (60Hz)
