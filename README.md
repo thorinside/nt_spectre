@@ -29,99 +29,11 @@
 
 ### Main Display
 
-```svg
-<svg width="400" height="200" xmlns="http://www.w3.org/2000/svg">
-  <!-- OLED Screen Background -->
-  <rect x="50" y="20" width="300" height="150" rx="5" fill="#000" stroke="#333" stroke-width="2"/>
-  
-  <!-- Spectrum Bars -->
-  <g fill="#00ff00" opacity="0.7">
-    <rect x="60" y="140" width="4" height="20"/>
-    <rect x="66" y="130" width="4" height="30"/>
-    <rect x="72" y="120" width="4" height="40"/>
-    <rect x="78" y="110" width="4" height="50"/>
-    <rect x="84" y="100" width="4" height="60"/>
-    <rect x="90" y="90" width="4" height="70"/>
-    <rect x="96" y="80" width="4" height="80"/>
-    <rect x="102" y="70" width="4" height="90"/>
-    <rect x="108" y="60" width="4" height="100"/>
-    <rect x="114" y="50" width="4" height="110"/>
-    <rect x="120" y="55" width="4" height="105"/>
-    <rect x="126" y="65" width="4" height="95"/>
-    <rect x="132" y="75" width="4" height="85"/>
-    <rect x="138" y="85" width="4" height="75"/>
-    <rect x="144" y="95" width="4" height="65"/>
-    <rect x="150" y="105" width="4" height="55"/>
-    <rect x="156" y="115" width="4" height="45"/>
-    <rect x="162" y="125" width="4" height="35"/>
-    <rect x="168" y="135" width="4" height="25"/>
-    <rect x="174" y="145" width="4" height="15"/>
-  </g>
-  
-  <!-- Band Markers -->
-  <line x1="100" y1="30" x2="100" y2="160" stroke="#ff4444" stroke-width="2" opacity="0.8"/>
-  <line x1="140" y1="30" x2="140" y2="160" stroke="#44ff44" stroke-width="2" opacity="0.8"/>
-  <line x1="180" y1="30" x2="180" y2="160" stroke="#4444ff" stroke-width="2" opacity="0.8"/>
-  
-  <!-- Band Labels -->
-  <text x="100" y="45" text-anchor="middle" fill="#ff4444" font-family="monospace" font-size="12" font-weight="bold">A</text>
-  <text x="140" y="45" text-anchor="middle" fill="#44ff44" font-family="monospace" font-size="12" font-weight="bold">B</text>
-  <text x="180" y="45" text-anchor="middle" fill="#4444ff" font-family="monospace" font-size="12" font-weight="bold">C</text>
-  
-  <!-- Title -->
-  <text x="200" y="190" text-anchor="middle" fill="#ccc" font-family="Arial" font-size="14" font-weight="bold">Live Spectrum with Band Markers</text>
-</svg>
-```
-
-### Control Layout
-
-```svg
-<svg width="500" height="300" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="500" height="300" fill="#f8f8f8" stroke="#ddd" stroke-width="1"/>
-  
-  <!-- Pots -->
-  <g id="pots">
-    <!-- Pot Circles -->
-    <circle cx="120" cy="100" r="30" fill="#333" stroke="#666" stroke-width="2"/>
-    <circle cx="250" cy="100" r="30" fill="#333" stroke="#666" stroke-width="2"/>
-    <circle cx="380" cy="100" r="30" fill="#333" stroke="#666" stroke-width="2"/>
-    
-    <!-- Pot Indicators -->
-    <line x1="120" y1="85" x2="120" y2="75" stroke="#ff4444" stroke-width="3" stroke-linecap="round"/>
-    <line x1="250" y1="85" x2="250" y2="75" stroke="#44ff44" stroke-width="3" stroke-linecap="round"/>
-    <line x1="380" y1="85" x2="380" y2="75" stroke="#4444ff" stroke-width="3" stroke-linecap="round"/>
-    
-    <!-- Labels -->
-    <text x="120" y="150" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">POT L</text>
-    <text x="120" y="165" text-anchor="middle" font-family="Arial" font-size="10" fill="#ff4444">Band A Freq</text>
-    <text x="250" y="150" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">POT C</text>
-    <text x="250" y="165" text-anchor="middle" font-family="Arial" font-size="10" fill="#44ff44">Band B Freq</text>
-    <text x="380" y="150" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">POT R</text>
-    <text x="380" y="165" text-anchor="middle" font-family="Arial" font-size="10" fill="#4444ff">Band C Freq</text>
-  </g>
-  
-  <!-- Encoders -->
-  <g id="encoders">
-    <!-- Encoder Circles -->
-    <circle cx="120" cy="220" r="25" fill="#555" stroke="#888" stroke-width="2"/>
-    <circle cx="380" cy="220" r="25" fill="#555" stroke="#888" stroke-width="2"/>
-    
-    <!-- Encoder Indicators -->
-    <line x1="120" y1="205" x2="120" y2="200" stroke="#white" stroke-width="2" stroke-linecap="round"/>
-    <line x1="380" y1="205" x2="380" y2="200" stroke="#white" stroke-width="2" stroke-linecap="round"/>
-    
-    <!-- Labels -->
-    <text x="120" y="260" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">ENC L</text>
-    <text x="120" y="275" text-anchor="middle" font-family="Arial" font-size="10">Y-Scale (×½/×2)</text>
-    <text x="380" y="260" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">ENC R</text>
-    <text x="380" y="275" text-anchor="middle" font-family="Arial" font-size="10">FFT Size</text>
-  </g>
-  
-  <!-- Title -->
-  <text x="250" y="30" text-anchor="middle" font-family="Arial" font-size="16" font-weight="bold">Spectre Control Layout</text>
-</svg>
-```
+The Disting NT has a monochrome OLED display (256×64 pixels) showing:
+- **Live spectrum**: Vertical bars representing FFT magnitude at each frequency
+- **Pink noise reference**: Background overlay showing ideal 1/f spectrum slope
+- **Band markers**: Vertical lines at Band A, B, and C center frequencies
+- **Band labels**: Small markers at top indicating which band is which
 
 ## User Manual
 
@@ -137,11 +49,11 @@
 
 #### Frequency Band Controls (Pots)
 
-| Control | Function | Range | Color |
-|---------|----------|-------|-------|
-| **Pot L** | Band A Center Frequency | 20 Hz - 20 kHz | 🔴 Red |
-| **Pot C** | Band B Center Frequency | 20 Hz - 20 kHz | 🟢 Green |
-| **Pot R** | Band C Center Frequency | 20 Hz - 20 kHz | 🔵 Blue |
+| Control | Function | Range |
+|---------|----------|-------|
+| **Pot L** | Band A Center Frequency | 20 Hz - 20 kHz |
+| **Pot C** | Band B Center Frequency | 20 Hz - 20 kHz |
+| **Pot R** | Band C Center Frequency | 20 Hz - 20 kHz |
 
 The frequency mapping follows a **logarithmic scale** for musical perception:
 - Fully CCW: 20 Hz (sub-bass)
@@ -184,110 +96,40 @@ Each frequency band generates a **0-10V CV signal** that follows the energy in t
 
 ### Basic Spectrum-Controlled Filter
 
-```svg
-<svg width="600" height="250" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="600" height="250" fill="#f8f8f8" stroke="#ddd" stroke-width="1"/>
-  
-  <!-- Audio Input -->
-  <rect x="50" y="50" width="80" height="40" rx="5" fill="#e8f4f8" stroke="#4a90a4"/>
-  <text x="90" y="75" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">Audio In</text>
-  
-  <!-- Spectre Plugin -->
-  <rect x="200" y="30" width="120" height="80" rx="5" fill="#ffe8e8" stroke="#d63384"/>
-  <text x="260" y="50" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">Spectre</text>
-  <text x="260" y="65" text-anchor="middle" font-family="Arial" font-size="10">3-Band Analysis</text>
-  
-  <!-- CV Outputs -->
-  <circle cx="340" cy="50" r="6" fill="#ff6b6b"/>
-  <circle cx="340" cy="70" r="6" fill="#4ecdc4"/>
-  <circle cx="340" cy="90" r="6" fill="#45b7d1"/>
-  <text x="355" y="55" font-family="Arial" font-size="10">CV A (Low)</text>
-  <text x="355" y="75" font-family="Arial" font-size="10">CV B (Mid)</text>
-  <text x="355" y="95" font-family="Arial" font-size="10">CV C (High)</text>
-  
-  <!-- VCF -->
-  <rect x="450" y="50" width="80" height="40" rx="5" fill="#e8f8e8" stroke="#4a90a4"/>
-  <text x="490" y="75" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">VCF</text>
-  
-  <!-- Connections -->
-  <path d="M 130 70 L 200 70" stroke="#333" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-  <path d="M 340 70 L 380 70 L 380 85 L 450 85" stroke="#4ecdc4" stroke-width="2" fill="none" marker-end="url(#arrowhead)"/>
-  
-  <!-- Arrow marker -->
-  <defs>
-    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#333"/>
-    </marker>
-  </defs>
-  
-  <!-- Labels -->
-  <text x="165" y="85" text-anchor="middle" font-family="Arial" font-size="10" fill="#666">Audio</text>
-  <text x="395" y="100" text-anchor="middle" font-family="Arial" font-size="10" fill="#666">Cutoff CV</text>
-  
-  <!-- Description -->
-  <text x="300" y="180" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold">Spectrum-Controlled Filter</text>
-  <text x="300" y="200" text-anchor="middle" font-family="Arial" font-size="12">Mid-frequency band controls filter cutoff frequency</text>
-  <text x="300" y="215" text-anchor="middle" font-family="Arial" font-size="12">Filter opens when midrange content is present</text>
-</svg>
+```mermaid
+graph LR
+    A[Audio In] -->|Audio| B[Spectre<br/>3-Band Analysis]
+    B -->|CV A: Low| C1[ ]
+    B -->|CV B: Mid| C2[Mid Band CV]
+    B -->|CV C: High| C3[ ]
+    C2 -->|Cutoff CV| D[VCF<br/>Filter]
+
+    style B fill:#f9f,stroke:#333
+    style C2 fill:#ff9,stroke:#333
+    style D fill:#9ff,stroke:#333
 ```
+
+*Mid-frequency band controls filter cutoff - filter opens when midrange content is present*
 
 ### Multi-Band Drum Gate
 
-```svg
-<svg width="600" height="300" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="600" height="300" fill="#f8f8f8" stroke="#ddd" stroke-width="1"/>
-  
-  <!-- Drum Input -->
-  <rect x="30" y="120" width="80" height="40" rx="5" fill="#e8f4f8" stroke="#4a90a4"/>
-  <text x="70" y="145" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">Drums</text>
-  
-  <!-- Spectre Plugin -->
-  <rect x="150" y="100" width="120" height="80" rx="5" fill="#ffe8e8" stroke="#d63384"/>
-  <text x="210" y="120" text-anchor="middle" font-family="Arial" font-size="12" font-weight="bold">Spectre</text>
-  <text x="210" y="135" text-anchor="middle" font-family="Arial" font-size="10">3-Band Analysis</text>
-  
-  <!-- CV Outputs to Gates -->
-  <rect x="320" y="50" width="60" height="30" rx="3" fill="#fff2cc" stroke="#d6b656"/>
-  <text x="350" y="70" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">Gate 1</text>
-  
-  <rect x="320" y="120" width="60" height="30" rx="3" fill="#fff2cc" stroke="#d6b656"/>
-  <text x="350" y="140" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">Gate 2</text>
-  
-  <rect x="320" y="190" width="60" height="30" rx="3" fill="#fff2cc" stroke="#d6b656"/>
-  <text x="350" y="210" text-anchor="middle" font-family="Arial" font-size="10" font-weight="bold">Gate 3</text>
-  
-  <!-- Sound Generators -->
-  <rect x="430" y="50" width="80" height="30" rx="3" fill="#e1f5fe" stroke="#4a90a4"/>
-  <text x="470" y="70" text-anchor="middle" font-family="Arial" font-size="10">Hi-Hat Gen</text>
-  
-  <rect x="430" y="120" width="80" height="30" rx="3" fill="#e1f5fe" stroke="#4a90a4"/>
-  <text x="470" y="140" text-anchor="middle" font-family="Arial" font-size="10">Snare Gen</text>
-  
-  <rect x="430" y="190" width="80" height="30" rx="3" fill="#e1f5fe" stroke="#4a90a4"/>
-  <text x="470" y="210" text-anchor="middle" font-family="Arial" font-size="10">Kick Gen</text>
-  
-  <!-- Connections -->
-  <path d="M 110 140 L 150 140" stroke="#333" stroke-width="2" fill="none"/>
-  <path d="M 270 120 L 320 65" stroke="#ff6b6b" stroke-width="2" fill="none"/>
-  <path d="M 270 140 L 320 135" stroke="#4ecdc4" stroke-width="2" fill="none"/>
-  <path d="M 270 160 L 320 205" stroke="#45b7d1" stroke-width="2" fill="none"/>
-  
-  <path d="M 380 65 L 430 65" stroke="#333" stroke-width="2" fill="none"/>
-  <path d="M 380 135 L 430 135" stroke="#333" stroke-width="2" fill="none"/>
-  <path d="M 380 205 L 430 205" stroke="#333" stroke-width="2" fill="none"/>
-  
-  <!-- Frequency Labels -->
-  <text x="290" y="115" font-family="Arial" font-size="10" fill="#ff6b6b">High</text>
-  <text x="290" y="135" font-family="Arial" font-size="10" fill="#4ecdc4">Mid</text>
-  <text x="290" y="165" font-family="Arial" font-size="10" fill="#45b7d1">Low</text>
-  
-  <!-- Description -->
-  <text x="300" y="260" text-anchor="middle" font-family="Arial" font-size="14" font-weight="bold">Multi-Band Drum Separation</text>
-  <text x="300" y="280" text-anchor="middle" font-family="Arial" font-size="12">Each frequency band triggers a different drum sound generator</text>
-</svg>
+```mermaid
+graph LR
+    A[Drums In] -->|Audio| B[Spectre<br/>3-Band Analysis]
+    B -->|CV A: High| C1[Gate 1]
+    B -->|CV B: Mid| C2[Gate 2]
+    B -->|CV C: Low| C3[Gate 3]
+    C1 --> D1[Hi-Hat Gen]
+    C2 --> D2[Snare Gen]
+    C3 --> D3[Kick Gen]
+
+    style B fill:#f9f,stroke:#333
+    style C1 fill:#ff9,stroke:#333
+    style C2 fill:#ff9,stroke:#333
+    style C3 fill:#ff9,stroke:#333
 ```
+
+*Each frequency band triggers a different drum sound generator for multi-band separation*
 
 ## Suggested Usage Scenarios
 
@@ -300,8 +142,8 @@ Each frequency band generates a **0-10V CV signal** that follows the energy in t
 
 **Patch Notes**:
 - Set bands to: 80Hz (low), 800Hz (mid), 8kHz (high)
-- Use 512 or 1024 FFT for good frequency separation
 - Attenuate CV signals if effects are too sensitive
+- Use RMS mode for smooth control of effect parameters
 
 ### 2. **Spectral Gate Sequencing**
 
@@ -311,9 +153,9 @@ Each frequency band generates a **0-10V CV signal** that follows the energy in t
 - Drive clock dividers or sequencers with the CV outputs
 
 **Patch Notes**:
-- Experiment with different FFT sizes for varying gate lengths
+- Use Peak mode for better transient detection
 - Use comparators to convert CV to clean gates
-- Chain multiple Spectres for more frequency bands
+- Adjust attack/release times to shape gate behavior
 
 ### 3. **Harmonic Following Bass**
 
@@ -347,9 +189,9 @@ Each frequency band generates a **0-10V CV signal** that follows the energy in t
 - Useful for mastering and bus processing
 
 **Patch Notes**:
-- Use larger FFT sizes (1024-2048) for precise frequency separation
+- Set narrow bandwidths (10-20%) for precise frequency isolation
 - Invert some CV signals for frequency-dependent expansion
-- Combine with multiband compressors
+- Use RMS mode for smooth dynamics control
 
 ### 6. **Percussive Element Extraction**
 
