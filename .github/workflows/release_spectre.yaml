@@ -1,0 +1,109 @@
+name: Make Spectre Plug-in Archive
+
+on:
+  push:
+    tags:
+      - "v*" # Runs action on pushed tags starting with 'v'
+  workflow_dispatch:
+    inputs:
+      use_latest_tag:
+        description: 'Use latest tag for release'
+        required: true
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: write # Needed for creating/updating GitHub releases
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true  # Checkout first-level submodules
+          fetch-depth: 0  # Fetch all history and tags for release notes
+
+      - name: Determine version tag
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Manual trigger - get latest tag
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -z "$LATEST_TAG" ]; then
+              echo "Error: No tags found in repository"
+              exit 1
+            fi
+            echo "Using latest tag: $LATEST_TAG"
+            echo "version=$LATEST_TAG" >> $GITHUB_OUTPUT
+            # Checkout the tag
+            git checkout "$LATEST_TAG"
+          else
+            # Tag push - use the pushed tag
+            echo "version=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install dependencies via Homebrew
+        run: |
+          brew update
+          brew install --cask gcc-arm-embedded
+
+      - name: Verify installation
+        run: |
+          arm-none-eabi-g++ --version
+
+      - name: Build spectre plugin
+        run: |
+          echo "Building spectre (spectralEnvFollower)"
+          make clean
+          make
+
+      - name: Prepare directory structure for release zip
+        run: |
+          # Create plugin directory
+          mkdir -p release/programs/plug-ins/spectre
+          echo "Copying spectralEnvFollower_plugin.o to programs/plug-ins/spectre/"
+          cp build/spectralEnvFollower_plugin.o release/programs/plug-ins/spectre/
+
+          # Show final structure
+          echo "Release directory structure:"
+          find release -type f
+
+      - name: Zip release artifact
+        run: |
+          cd release
+          zip -r ../spectre-plugin.zip programs
+          cd ..
+          echo "Created zip contents:"
+          unzip -l spectre-plugin.zip
+
+      - name: Generate Release Notes
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          echo "# Spectre - Spectral Envelope Follower" > release_notes.md
+          echo "" >> release_notes.md
+          echo "## Version $VERSION" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Installation" >> release_notes.md
+          echo "Extract the zip and copy the \`programs\` folder to the root of your Disting NT SD card." >> release_notes.md
+          echo "" >> release_notes.md
+          echo "### Changes" >> release_notes.md
+          # Get commits since previous tag (if exists)
+          PREV_TAG=$(git describe --tags --abbrev=0 "$VERSION^" 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            git log --pretty=format:"- %s" "$PREV_TAG".."$VERSION" >> release_notes.md
+          else
+            git log --pretty=format:"- %s" -10 >> release_notes.md
+          fi
+          echo "" >> release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          files: spectre-plugin.zip
+          body_path: release_notes.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
