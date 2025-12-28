@@ -1,21 +1,21 @@
 /*
- * Spectral Envelope Follower (3‑Band)
- * -----------------------------------
+ * Spectre - Spectral Envelope Follower (3-Band)
+ * ----------------------------------------------
  *
- * ‑ Uses a fast ARM‑optimised FFT (e.g. KissFFT or CMSIS‑DSP – compiled
+ * - Uses a fast ARM-optimised FFT (e.g. KissFFT or CMSIS-DSP – compiled
  *   separately and **statically linked**).
- * ‑ Analyses an incoming audio signal and tracks the energy in three
- *   user‑selectable frequency bands.
- * ‑ The energy of each band is output on three CV outputs (0‑10 V).
- * ‑ The three pots choose the *centre* frequency of each band.  Bands may
+ * - Analyses an incoming audio signal and tracks the energy in three
+ *   user-selectable frequency bands.
+ * - The energy of each band is output on three CV outputs (0-10 V).
+ * - The three pots choose the *centre* frequency of each band.  Bands may
  *   overlap freely.
- * ‑ Encoder L scales the Y‑axis of the spectrum view (×½ / ×2 per detent).
- * ‑ Encoder R steps through FFT sizes 256 → 512 → 1024 → 2048 (and wraps).
- * ‑ The custom UI draws a bar chart of the current FFT magnitudes with
+ * - Encoder L scales the Y-axis of the spectrum view (×½ / ×2 per detent).
+ * - Encoder R steps through FFT sizes 256 → 512 → 1024 → 2048 (and wraps).
+ * - The custom UI draws a bar chart of the current FFT magnitudes with
  *   bold markers at the three band centres.
  *
- * 2025 © Thorinside / Example code produced by ChatGPT‑o3.
- * Released under the MIT Licence.
+ * 2025 © Thorinside / Example code produced by ChatGPT-o3.
+ * Released under the MIT Licence.
  */
 
 #include <math.h>
@@ -38,12 +38,12 @@ extern "C" int* __errno(void) {
 // -----------------------------------------------------------------------------
 
 static const int kFftSize                = 512;           // Fixed 512-point FFT
-static const int kFftRateHz              = 60;            // FFT update rate (Hz)
+static const int kFftRateHz              = 5;             // FFT update rate (Hz)
 static const float kMinAttackMs          = 1.0f;          // 1 ms minimum attack
 static const float kMaxAttackMs          = 1000.0f;       // 1 second maximum attack
 static const float kMinReleaseMs         = 10.0f;         // 10 ms minimum release
 static const float kMaxReleaseMs         = 5000.0f;       // 5 seconds maximum release
-static const float kReferenceVoltage     = 10.0f;         // 10 V full‑scale
+static const float kReferenceVoltage     = 10.0f;         // 10 V full-scale
 static const float kMinPotFreq           = 20.0f;         // 20 Hz lower limit
 static const float kMaxPotFreq           = 20000.0f;      // 20 kHz upper limit
 
@@ -54,6 +54,11 @@ static const float kFftRmsNormalization  = 1.0f / ((float)kFftSize * kHannWindow
 static const float kPeakNormPositive     = 2.0f / kHannWindowSum;             // For mirrored bins
 static const float kPeakNormEdge         = 1.0f / kHannWindowSum;             // For DC / Nyquist bins
 static const float kSqrtTwo              = 1.41421356f;
+
+// Compile-time memory safety checks
+static_assert(kFftSize == 512, "FFT size must be 512");
+static_assert(kFftSize % 2 == 0, "FFT size must be even");
+static_assert(kFftSize / 2 == 256, "Half FFT size must be 256 for display width");
 
 // No need for separate function pointers - we'll use the generic arm_cfft_init_f32()
 
@@ -132,7 +137,7 @@ static void realFFT(float* realInput, Complex* complexOutput, int n) {
 }
 
 // -----------------------------------------------------------------------------
-// DTC (D‑TCM) – real‑time / large data that benefits from fast access.
+// DTC (D-TCM) – real-time / large data that benefits from fast access.
 // -----------------------------------------------------------------------------
 struct _SpectralEnvFollower_DTC
 {
@@ -145,7 +150,7 @@ struct _SpectralEnvFollower_DTC
     // FFT output buffer (complex spectrum)
     Complex fftOutput[kFftSize]     __attribute__((aligned(4)));
 
-    // Per‑bin magnitude (half‑spectrum)
+    // Per-bin magnitude (half-spectrum)
     float magnitude[kFftSize/2]     __attribute__((aligned(4)));
 
     // Envelope followers for the three bands
@@ -159,7 +164,7 @@ struct _SpectralEnvFollower_DTC
     int   samplesAccumulated;  // how many samples currently in inputBuffer
     int   samplesSinceLastFFT; // counter for FFT rate limiting
     float potCentres[3];       // Hz – centre freq for each band (updated by UI)
-    float potCentreBins[3];    // cached centre‑bin indices (float) for speed
+    float potCentreBins[3];    // cached centre-bin indices (float) for speed
     float bandwidthOctaves;    // bandwidth in octaves (e.g., 0.333 for 1/3 octave)
     float yScale;              // vertical scale in UI (multiplier)
     bool  displayInitialized;  // flag to track per-instance display initialization
@@ -195,9 +200,9 @@ static const char* detectionModeStrings[] = {"RMS", "Peak", nullptr};
 
 static _NT_parameter gParameters[] = {
     NT_PARAMETER_AUDIO_INPUT("Audio In", 1, 1)
-    NT_PARAMETER_CV_OUTPUT_WITH_MODE("Band A CV", 1, 13)
-    NT_PARAMETER_CV_OUTPUT_WITH_MODE("Band B CV", 1, 14)
-    NT_PARAMETER_CV_OUTPUT_WITH_MODE("Band C CV", 1, 15)
+    NT_PARAMETER_CV_OUTPUT_WITH_MODE("Band A CV", 1, 13)
+    NT_PARAMETER_CV_OUTPUT_WITH_MODE("Band B CV", 1, 14)
+    NT_PARAMETER_CV_OUTPUT_WITH_MODE("Band C CV", 1, 15)
     { .name = "Band A Freq", .min = 20, .max = 20000, .def = 100, .unit = kNT_unitHz, .scaling = kNT_scalingNone, .enumStrings = nullptr },
     { .name = "Band B Freq", .min = 20, .max = 20000, .def = 1000, .unit = kNT_unitHz, .scaling = kNT_scalingNone, .enumStrings = nullptr },
     { .name = "Band C Freq", .min = 20, .max = 20000, .def = 8000, .unit = kNT_unitHz, .scaling = kNT_scalingNone, .enumStrings = nullptr },
@@ -235,7 +240,7 @@ static const _NT_parameterPages gParameterPages = {
 };
 
 // -----------------------------------------------------------------------------
-// Helper – map 0‑1 pot value → frequency (log scale).
+// Helper – map 0-1 pot value → frequency (log scale).
 // -----------------------------------------------------------------------------
 static inline float potToFreq(float norm)
 {
@@ -246,7 +251,7 @@ static inline float potToFreq(float norm)
     return f;
 }
 
-// Helper – map frequency → 0‑1 pot value (inverse of potToFreq)
+// Helper – map frequency → 0-1 pot value (inverse of potToFreq)
 static inline float freqToPot(float freq)
 {
     const float minLog = logf(kMinPotFreq);
@@ -314,7 +319,7 @@ static _NT_algorithm *construct(const _NT_algorithmMemoryPtrs &mem,
 }
 
 // -----------------------------------------------------------------------------
-// Utility – convert band envelope level → voltage (0‑10 V).
+// Utility – convert band envelope level → voltage (0-10 V).
 // -----------------------------------------------------------------------------
 static inline float envToVolts(float env)
 {
@@ -496,7 +501,8 @@ static void step(_NT_algorithm *base, float *bus, int framesBy4)
                         }
 
                         float mag2 = mag * mag;
-                        float weight = (k == 0 || k == half) ? 1.0f : 2.0f;  // Account for mirrored bins
+                        // DC bin (k==0) is not mirrored; all other bins in positive half-spectrum are mirrored
+                        float weight = (k == 0) ? 1.0f : 2.0f;
                         powerSum += mag2 * weight;
                     }
 
@@ -595,9 +601,10 @@ static bool draw(_NT_algorithm *base)
     }
 
     // Draw spectrum visualization
-    const int width = 256;
-    const int height = 64;
-    const int half = kFftSize / 2;  // 512 bins
+    // Clamp to actual display dimensions (256x64 for distingNT)
+    const int width = 256;   // distingNT OLED width
+    const int height = 64;   // distingNT OLED height
+    const int half = kFftSize / 2;  // 256 bins
 
     // Get sample rate and bin resolution for pink noise calculation
     float sampleRate = (NT_globals.sampleRate > 0) ? (float)NT_globals.sampleRate : 48000.0f;
@@ -606,14 +613,16 @@ static bool draw(_NT_algorithm *base)
     // Draw pink noise reference overlay first (as background)
     // Pink noise has 1/f power spectrum, drops 3dB per octave
     // Draw it in a darker color (3-4) so it doesn't overpower the actual spectrum
-    for (int x = 1; x < width && x < half; ++x) {  // Start at 1 to avoid log(0)
+    const int maxBin = (width < half) ? width : half;  // Prevent buffer overflow - maxBin <= 256
+    // Safety: maxBin must not exceed magnitude array size (kFftSize/2 = 256)
+    for (int x = 1; x < maxBin; ++x) {  // Start at 1 to avoid log(0)
         int binIdx = x;
         float freq = binIdx * binHz;
 
         // Pink noise magnitude is proportional to 1/sqrt(f)
         // Reference: at 1kHz, use a reasonable magnitude
         const float refFreq = 1000.0f;
-        const float refMag = 50.0f;  // Tunable reference magnitude
+        const float refMag = 200.0f;  // Tunable reference magnitude (increased for visibility)
 
         float pinkMag = refMag * sqrtf(refFreq / freq);
 
@@ -629,9 +638,10 @@ static bool draw(_NT_algorithm *base)
         if (barHeight > 0 && x >= 0 && x < width) {
             int y1 = height - barHeight;
             int y2 = height - 1;
+            // Strict bounds checking - ensure all coordinates stay within [0, width) x [0, height)
             if (y1 < 0) y1 = 0;
             if (y2 >= height) y2 = height - 1;
-            if (y1 <= y2) {
+            if (y1 <= y2 && x >= 0 && x < width && y1 >= 0 && y2 < height) {
                 NT_drawShapeI(kNT_line, x, y1, x, y2, 3);  // Darker color for background
             }
         }
@@ -641,11 +651,11 @@ static bool draw(_NT_algorithm *base)
     NT_drawShapeI(kNT_line, 0, height-1, width-1, height-1, 15);
 
     // Draw consecutive bins - 512 FFT gives us 256 bins, map directly to 256 pixels
-    for (int x = 0; x < width && x < half; ++x) {
+    for (int x = 0; x < maxBin; ++x) {
         // Map display pixel directly to FFT bin (1:1 mapping)
         int binIdx = x;
-        
-        // Get magnitude for this bin directly
+
+        // Get magnitude for this bin directly (binIdx guaranteed < half by loop condition)
         float mag = d->magnitude[binIdx];
         
         // Apply logarithmic scaling for better visualization
@@ -660,45 +670,43 @@ static bool draw(_NT_algorithm *base)
         if (barHeight > 0 && x >= 0 && x < width) {
             int y1 = height - barHeight;
             int y2 = height - 1;
-            // Ensure y coordinates are reasonable
+            // Strict bounds checking - ensure all coordinates stay within [0, width) x [0, height)
             if (y1 < 0) y1 = 0;
             if (y2 >= height) y2 = height - 1;
-            if (y1 <= y2) {
+            if (y1 <= y2 && x >= 0 && x < width && y1 >= 0 && y2 < height) {
                 NT_drawShapeI(kNT_line, x, y1, x, y2, 7);  // Vertical line for each bin
             }
         }
     }
 
-    // Draw band center markers based on current parameter values
+    // Draw band center markers using cached bin positions from parameterChanged()
     for (int b = 0; b < 3; ++b) {
-        // Get frequency directly from parameter values
-        int paramIndex = kParamBandAFreq + b;
-        float frequency = (float)self->v[paramIndex];
-        
-        // Draw marker - use default if frequency is 0
-        if (frequency <= 0.0f) {
-            // Use default frequencies if not set
-            frequency = (b == 0) ? 100.0f : ((b == 1) ? 1000.0f : 8000.0f);
-        }
-        {
-            float centerBin = frequency / binHz;
-            
-            // Ensure centerBin is within display range
-            if (centerBin >= 1.0f && centerBin < (float)(width - 1)) {
-                int centerX = (int)roundf(centerBin);
-                
-                // Ensure centerX is within reasonable bounds
-                if (centerX >= 0 && centerX < width) {
-                    // Use distinct colors: 15 (white), 11, 3
-                    int color = (b == 0) ? 15 : ((b == 1) ? 11 : 3);
-                    
-                    // Draw vertical line for frequency marker
+        // Use pre-calculated bin positions (updated by parameterChanged)
+        float centerBin = d->potCentreBins[b];
+
+        // Ensure centerBin is within display range
+        if (centerBin >= 1.0f && centerBin < (float)(width - 1)) {
+            int centerX = (int)roundf(centerBin);
+
+            // Strict bounds checking - ensure within screen bounds [0, width) x [0, height)
+            if (centerX >= 0 && centerX < width) {
+                // Use distinct colors: 15 (white), 11, 3
+                int color = (b == 0) ? 15 : ((b == 1) ? 11 : 3);
+
+                // Draw vertical line for frequency marker (with bounds check)
+                if (centerX >= 0 && centerX < width && height > 0) {
                     NT_drawShapeI(kNT_line, centerX, 0, centerX, height - 1, color);
-                    
-                    // Draw horizontal line at top for visibility
-                    if (centerX >= 2 && centerX <= width - 3) {
-                        NT_drawShapeI(kNT_line, centerX - 2, 0, centerX + 2, 0, color);
-                        NT_drawShapeI(kNT_line, centerX - 2, 1, centerX + 2, 1, color);
+                }
+
+                // Draw horizontal line at top for visibility (with bounds check)
+                int x1 = centerX - 2;
+                int x2 = centerX + 2;
+                if (x1 < 0) x1 = 0;
+                if (x2 >= width) x2 = width - 1;
+                if (x1 <= x2 && x1 >= 0 && x2 < width) {
+                    NT_drawShapeI(kNT_line, x1, 0, x2, 0, color);
+                    if (1 < height) {
+                        NT_drawShapeI(kNT_line, x1, 1, x2, 1, color);
                     }
                 }
             }
@@ -798,7 +806,7 @@ static void setupUi(_NT_algorithm *base, _NT_float3 &pots)
 static const _NT_factory gFactory =
 {
     .guid                       = NT_MULTICHAR('T','h','S','f'),
-    .name                       = "SpecEnv 3‑Band",
+    .name                       = "SpecEnv 3-Band",
     .description                = "Spectral envelope follower with three CV bands and live FFT display",
     .numSpecifications          = 0,
     .specifications             = nullptr,

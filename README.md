@@ -379,6 +379,12 @@ This project is released under the MIT License. See the LICENSE file for details
 
 ## Version History
 
+### v1.0.1 (2025-12-28)
+- Fix: Replace Unicode characters in plugin name with ASCII
+  - Non-breaking space (U+00A0) and non-breaking hyphen (U+2011) were being
+    sent in SysEx responses, with byte 0xC2 interpreted as MIDI Program Change,
+    corrupting the NT's MIDI output and breaking subsequent SysEx communication
+
 ### v1.0.0 (2025-10-25)
 - Initial release
 - 3-band spectral envelope follower with 512-point FFT
