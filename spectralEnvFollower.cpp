@@ -229,9 +229,9 @@ static const uint8_t envelopePage[] = {
 };
 
 static const _NT_parameterPage gPages[] = {
-    {.name = "Routing", .numParams = static_cast<uint8_t>(ARRAY_SIZE(routingPage)), .params = routingPage},
-    {.name = "Spectral", .numParams = static_cast<uint8_t>(ARRAY_SIZE(spectralPage)), .params = spectralPage},
-    {.name = "Envelope", .numParams = static_cast<uint8_t>(ARRAY_SIZE(envelopePage)), .params = envelopePage},
+    {.name = "Routing", .numParams = static_cast<uint8_t>(ARRAY_SIZE(routingPage)), .group = 0, .unused = {}, .params = routingPage},
+    {.name = "Spectral", .numParams = static_cast<uint8_t>(ARRAY_SIZE(spectralPage)), .group = 0, .unused = {}, .params = spectralPage},
+    {.name = "Envelope", .numParams = static_cast<uint8_t>(ARRAY_SIZE(envelopePage)), .group = 0, .unused = {}, .params = envelopePage},
 };
 
 static const _NT_parameterPages gParameterPages = {
@@ -826,6 +826,8 @@ static const _NT_factory gFactory =
     .serialise                  = nullptr,
     .deserialise                = nullptr,
     .midiSysEx                  = nullptr,
+    .parameterUiPrefix          = nullptr,
+    .parameterString            = nullptr,
 };
 
 // -----------------------------------------------------------------------------
