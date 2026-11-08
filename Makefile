@@ -98,7 +98,7 @@ check: $(TARGET_OBJ)
 # Build plugins as host platform dynamic libraries for VCV Rack emulator testing
 # Host compiler settings
 HOST_CXX ?= clang++
-HOST_CXXFLAGS := -std=c++11 -fPIC -Wall  $(INCLUDE_PATH)
+HOST_CXXFLAGS := -std=c++17 -O2 -fPIC -Wall -Wextra -fno-rtti -fno-exceptions $(INCLUDE_PATH)
 
 # Detect host platform
 HOST_OS := $(shell uname -s)
@@ -118,7 +118,7 @@ endif
 # Source files
 host_inputs := $(wildcard *.cpp)
 # Transform source files to host plugins
-host_plugins := $(patsubst %.cpp,%$(HOST_SUFFIX),$(basename host_inputs))
+host_plugins := $(patsubst %.cpp,%$(HOST_SUFFIX),$(host_inputs))
 
 # Build rule for host plugins
 %$(HOST_SUFFIX): %.cpp
